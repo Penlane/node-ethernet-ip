@@ -478,7 +478,7 @@ class Controller extends ENIP {
 
         this.write_cip(MR);
 
-        const readTagErr = new Error(`TIMEOUT occurred while writing Reading Tag: ${tag.name}.`);
+        const readTagErr = new Error(`TIMEOUT occurred while reading Tag: ${tag.name}.`);
 
         // Wait for Response
         const data = await promiseTimeout(
@@ -660,7 +660,8 @@ class Controller extends ENIP {
             WRITE_TAG,
             WRITE_TAG_FRAGMENTED,
             READ_MODIFY_WRITE_TAG,
-            MULTIPLE_SERVICE_PACKET
+            MULTIPLE_SERVICE_PACKET,
+            EXECUTE_PCCC_SERVICE
         } = CIP.MessageRouter.services;
 
         let error = generalStatusCode !== 0 ? { generalStatusCode, extendedStatus } : null;
@@ -668,6 +669,17 @@ class Controller extends ENIP {
         // Route Incoming Message Responses
         /* eslint-disable indent */
         switch (service - 0x80) {
+            case EXECUTE_PCCC_SERVICE:
+                // This is intended! since the function is generic,
+                // we can use it to parse even PCCC messages. Neat!
+                // For decision, check TNS ID, set in PCCC class to Read/Write!
+                if (data.readUInt16LE(9) == 0x6572) {
+                    this.emit("Read Tag", error, data);
+                }
+                else if (data.readUInt16LE(9) == 0x7277) {
+                    this.emit("Write Tag", error, data);
+                }
+                break;
             case GET_ATTRIBUTE_SINGLE:
                 this.emit("Get Attribute Single", error, data);
                 break;

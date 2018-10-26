@@ -2,6 +2,7 @@ const { Socket, isIPv4 } = require("net");
 const { EIP_PORT } = require("../config");
 const encapsulation = require("./encapsulation");
 const CIP = require("./cip");
+const PCCC = require("./pccc");
 const { promiseTimeout } = require("../utilities");
 const { lookup } = require("dns");
 
@@ -301,4 +302,4 @@ class ENIP extends Socket {
     // endregion
 }
 
-module.exports = { ENIP, CIP, encapsulation };
+module.exports = { ENIP, CIP, PCCC, encapsulation };
