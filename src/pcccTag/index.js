@@ -17,7 +17,7 @@ class pcccTag extends EventEmitter {
         if (!pcccTag.isValidTagname(tagname)) throw new Error("Tagname Must be of Type <string>");
         if (!isValidTypeCode(datatype) && datatype !== null)
             throw new Error("Datatype must be a Valid Type Code <number>");
-        if (readCount <= 0 || typeof readCount !== "number") throw new Error("Readcount must be a positive number");
+        if (readCount <= 0 || readCount >= 255 || typeof readCount !== "number") throw new Error("Readcount must be a positive number between 0 and 255");
         if (typeof keepAlive !== "number")
             throw new Error(
                 `Tag expected keepAlive of type <number> instead got type <${typeof keepAlive}>`
