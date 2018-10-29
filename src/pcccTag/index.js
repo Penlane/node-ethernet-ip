@@ -349,7 +349,7 @@ class pcccTag extends EventEmitter {
      */
     
     parseReadMessageResponse(data) {
-        if (data.readUInt8(9) != 0x00) throw new Error("Error in embedded SLC packet detected!");
+        if (data.readUInt8(8) != 0x00) throw new Error("Error in embedded SLC packet detected!");
         const { tag } = this.state;
         if (tag.count > 1) { // We are reading more than one pccc tag
             let valArray = new Array();
