@@ -56,7 +56,6 @@ class pcccTag extends EventEmitter {
                 subElementNo: subElementNumber,
                 value: null,
                 controllerValue: null,
-                //path: pathBuf,
                 count: readCount,
                 stage_write: false,
                 size: tagSize
@@ -64,7 +63,7 @@ class pcccTag extends EventEmitter {
             read_size: 0x01,
             error: { code: null, status: null },
             timestamp: new Date(),
-            //instance: hash(pathBuf),
+            instance: hash(tagname+tagType+readCount), // Not really needed since we do not support PCCCTagGroups
             keepAlive: keepAlive
         };
     }
@@ -350,6 +349,7 @@ class pcccTag extends EventEmitter {
      */
     
     parseReadMessageResponse(data) {
+        if (data.readUInt8(9) != 0x00) throw new Error("Error in embedded SLC packet detected!");
         const { tag } = this.state;
         if (tag.count > 1) { // We are reading more than one pccc tag
             let valArray = new Array();
@@ -371,7 +371,7 @@ class pcccTag extends EventEmitter {
             }
             this.controller_value = valArray;
         }
-        else { // Only one pccc tag is read
+        else { // Only one pccc tag is read TODO: Can we merge this into the for-loop?
             /* eslint-disable indent */
             switch (tag.type) {
                 case "INT":
@@ -464,7 +464,6 @@ class pcccTag extends EventEmitter {
                 ptr +=1;
             }
         }
-
 
         const pcccHeader = Buffer.from([0x07, 0x00, 0x00, 0x12,0x23,0x34,0x56]); // Hardcoded for each PCCC packet
         var pcccdata = 0;
