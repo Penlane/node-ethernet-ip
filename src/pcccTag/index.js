@@ -11,12 +11,13 @@ const dateFormat = require("dateformat");
 // Static Class Property - Tracks Instances
 let instances = 0;
 class pcccTag extends EventEmitter {
-    constructor(tagname, datatype = null, keepAlive = 0) {
+    constructor(tagname, readCount = 1, datatype = null, keepAlive = 0) {
         super();
 
         if (!pcccTag.isValidTagname(tagname)) throw new Error("Tagname Must be of Type <string>");
         if (!isValidTypeCode(datatype) && datatype !== null)
             throw new Error("Datatype must be a Valid Type Code <number>");
+        if (readCount <= 0 || typeof readCount !== "number") throw new Error("Readcount must be a positive number");
         if (typeof keepAlive !== "number")
             throw new Error(
                 `Tag expected keepAlive of type <number> instead got type <${typeof keepAlive}>`
@@ -56,6 +57,7 @@ class pcccTag extends EventEmitter {
                 value: null,
                 controllerValue: null,
                 //path: pathBuf,
+                count: readCount,
                 stage_write: false,
                 size: tagSize
             },
@@ -313,9 +315,9 @@ class pcccTag extends EventEmitter {
         ptr+=2;
         command.writeUInt8(protectedTypedLogicalReadFNC,ptr);
 
-        const tagRequest = Buffer.alloc(6); // For request: always 5 bytes
+        const tagRequest = Buffer.alloc(6); // For request: always 5 bytes + Padding
         ptr = 0;
-        tagRequest.writeUInt8(tag.size,ptr);
+        tagRequest.writeUInt8(tag.size*tag.count,ptr);
         ptr+=1;
         tagRequest.writeUInt8(tag.fileNo,ptr);
         ptr+=1;
@@ -349,20 +351,43 @@ class pcccTag extends EventEmitter {
     
     parseReadMessageResponse(data) {
         const { tag } = this.state;
-        /* eslint-disable indent */
-        switch (tag.type) {
-            case "INT":
-                this.controller_value = data.readUInt16LE(11);
-                break;
-            case "BOOL":
-                this.controller_value = (data.readUInt8(11) >> tag.subElementNo) & 0x01; // With BOOL, we only want the sub-element!
-                break;
-            case "FLOAT":
-                this.controller_value = data.readFloatLE(11);
-                break;
-            default:
-                break;
+        if (tag.count > 1) { // We are reading more than one pccc tag
+            let valArray = new Array();
+            for (let i = 0; i < tag.count; i++) {
+                /* eslint-disable indent */
+                switch (tag.type) {
+                    case "INT":
+                        valArray.push(data.readUInt16LE(11+i*tag.size));
+                        break;
+                    case "BOOL":
+                        valArray.push(data.readUInt8(11+i*tag.size) >> tag.subElementNo) & 0x01; // With BOOL, we only want the sub-element!
+                        break;
+                    case "FLOAT":
+                        valArray.push(data.readFloatLE(11+i*tag.size));
+                        break;
+                    default:
+                        break;
+                }
+            }
+            this.controller_value = valArray;
         }
+        else { // Only one pccc tag is read
+            /* eslint-disable indent */
+            switch (tag.type) {
+                case "INT":
+                    this.controller_value = data.readUInt16LE(11);
+                    break;
+                case "BOOL":
+                    this.controller_value = (data.readUInt8(11) >> tag.subElementNo) & 0x01; // With BOOL, we only want the sub-element!
+                    break;
+                case "FLOAT":
+                    this.controller_value = data.readFloatLE(11);
+                    break;
+                default:
+                    break;
+            }
+        }
+
     }
 
     /**
@@ -411,9 +436,9 @@ class pcccTag extends EventEmitter {
         ptr+=2;
         command.writeUInt8(protectedTypedLogicalMaskedWriteFNC,ptr);
 
-        const tagRequest = Buffer.alloc(5+2+tag.size); // 5 is static header + 2 for Mask + size for actual value
+        const tagRequest = Buffer.alloc(5+2+tag.size*tag.count); // 5 is static header + 2 for Mask + size for actual value
         ptr = 0;
-        tagRequest.writeUInt8(tag.size,ptr);
+        tagRequest.writeUInt8(tag.size*tag.count,ptr);
         ptr+=1;
         tagRequest.writeUInt8(tag.fileNo,ptr);
         ptr+=1;
@@ -425,18 +450,21 @@ class pcccTag extends EventEmitter {
         ptr+=1;
         tagRequest.writeUInt16LE(mask,ptr);
         ptr+=2;
-        if (tag.type == "INT") {
-            tagRequest.writeUInt16LE(value,ptr);
-            ptr+=2;
+        for (let i = 0; i < tag.count; i++) {
+            if (tag.type == "INT") {
+                tagRequest.writeUInt16LE(value,ptr);
+                ptr+=2;
+            }
+            else if (tag.type == "FLOAT") {
+                tagRequest.writeFloatLE(value,ptr);
+                ptr +=4;
+            }
+            else if (tag.type == "BOOL") {
+                tagRequest.writeUInt8(value,ptr);
+                ptr +=1;
+            }
         }
-        else if (tag.type == "FLOAT") {
-            tagRequest.writeFloatLE(value,ptr);
-            ptr +=4;
-        }
-        else if (tag.type == "BOOL") {
-            tagRequest.writeUInt8(value,ptr);
-            ptr +=1;
-        }
+
 
         const pcccHeader = Buffer.from([0x07, 0x00, 0x00, 0x12,0x23,0x34,0x56]); // Hardcoded for each PCCC packet
         var pcccdata = 0;
