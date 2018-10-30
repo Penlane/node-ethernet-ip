@@ -400,8 +400,21 @@ class pcccTag extends EventEmitter {
      */
     generateWriteMessageRequest(value = null, size = 0x01) {
         if (value !== null) this.state.tag.value = value;
-
         const { tag } = this.state;
+
+        if (value.constructor === Array && tag.count == value.length) {
+            //We have an array, and the length matches, good.
+        }
+        else if (typeof value === "number" && tag.count == 1) {
+            //We have a single number, and only want to read one tag, good.
+            //But we want to convert it to a one-element array.
+            const oval = value;
+            value = new Array();
+            value.push(oval);
+        }
+        else {
+            throw new Error("Check that your readCount and ValueList match!");
+        }
 
         if (tag.type === null)
             throw new Error(
@@ -452,15 +465,15 @@ class pcccTag extends EventEmitter {
         ptr+=2;
         for (let i = 0; i < tag.count; i++) {
             if (tag.type == "INT") {
-                tagRequest.writeUInt16LE(value,ptr);
+                tagRequest.writeUInt16LE(value[i],ptr);
                 ptr+=2;
             }
             else if (tag.type == "FLOAT") {
-                tagRequest.writeFloatLE(value,ptr);
+                tagRequest.writeFloatLE(value[i],ptr);
                 ptr +=4;
             }
             else if (tag.type == "BOOL") {
-                tagRequest.writeUInt8(value,ptr);
+                tagRequest.writeUInt8(value[i],ptr);
                 ptr +=1;
             }
         }
