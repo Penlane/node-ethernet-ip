@@ -405,7 +405,7 @@ class pcccTag extends EventEmitter {
         if (value.constructor === Array && tag.count == value.length) {
             //We have an array, and the length matches, good.
         }
-        else if (typeof value === "number" && tag.count == 1) {
+        else if ((typeof value === "number" || typeof value === "boolean") && tag.count == 1) {
             //We have a single number, and only want to read one tag, good.
             //But we want to convert it to a one-element array.
             const oval = value;
