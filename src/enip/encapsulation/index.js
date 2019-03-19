@@ -285,6 +285,32 @@ const unregisterSession = session => {
 };
 
 /**
+ * Returns a ListIdentity String
+ *
+ * @returns {string} listIdentity string
+ */
+const listIdentity = () => {
+    const { ListIdentity } = commands;
+    const { build } = header;
+
+    // Build ListIdentity Buffer
+    return build(ListIdentity, 0x00);
+};
+
+/**
+ * Returns a ListServices String
+ *
+ * @returns {string} ListServices string
+ */
+const listServices = () => {
+    const { ListServices} = commands;
+    const { build } = header;
+
+    // Build ListServices Buffer
+    return build(ListServices, 0x00);
+};
+
+/**
  * Returns a UCMM Encapsulated Packet String
  *
  * @param {number} session - Encapsulation Session ID
@@ -329,18 +355,23 @@ const sendUnitData = (session, data, ConnectionID, SequnceNumber) => {
     timeoutBuf.writeUInt16LE(0x00, 4); // Timeout (sec) (Shall be 0 for Connected Messages)
 
     // Enclose in Common Packet Format
-    const seqAddrBuf = Buffer.alloc(8);
+    const seqAddrBuf = Buffer.alloc(4);
     seqAddrBuf.writeUInt32LE(ConnectionID, 0);
-    seqAddrBuf.writeUInt32LE(SequnceNumber, 4);
+    const seqNumberBuf = Buffer.alloc(2);
+    seqNumberBuf.writeUInt16LE(SequnceNumber, 0);
+    const ndata = Buffer.concat([
+        seqNumberBuf,
+        data
+    ]);
 
     let buf = CPF.build([
         {
-            TypeID: CPF.ItemIDs.SequencedAddrItem,
+            TypeID: CPF.ItemIDs.ConnectionBased,
             data: seqAddrBuf
         },
         {
             TypeID: CPF.ItemIDs.ConnectedTransportPacket,
-            data: data
+            data: ndata
         }
     ]);
 
@@ -361,5 +392,7 @@ module.exports = {
     registerSession,
     unregisterSession,
     sendRRData,
-    sendUnitData
+    sendUnitData,
+    listIdentity,
+    listServices
 };
