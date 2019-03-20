@@ -745,55 +745,82 @@ class Controller extends ENIP {
         const { LOGICAL } = CIP.EPATH.segments;
         const { getTypeCodeString } = require("../enip/cip/data-types");
         const templateAtt = await this._getTemplateMarkup(symbolType);
+        let memberOffset = 0; // by this offset, we mean the offset of the readTemplate service
+        let stillReading = true;
+        let parser = new SymbolParser();
+        let fullData;
+
+        // Initialize service-dependent buffers
+        const templateRequest = Buffer.alloc(6); // 4 Bytes for offset, 2 bytes for Object size
+        let MR; // The message router packet
+        const magicFormula = (templateAtt.objDefinitionSize * 4) - 23; // - 23; // 1756-PM020 p.53
+        let remainingBytes = 0; // If we read a large packet, we need this diff to tell us how many bytes are remaining
         // Build Identity Object Logical Path Buffer per 1756-PM020 p. 51f
         const identityPath = Buffer.concat([
             LOGICAL.build(LOGICAL.types.ClassID, 0x6C), // Template Object (0x6C)
             LOGICAL.build(LOGICAL.types.InstanceID, symbolType), // Instance ID (0x0)
         ]);
-
-        // Build the request per 1756-PM020 p. 51f
-        const templateRequest = Buffer.concat([
-            Buffer([0x00, 0x00]), //Starting Offset
-            Buffer([0x00, 0x00]), //
-            Buffer.alloc(2), // Used to fill Object size
-        ]);
-        const magicFormula = (templateAtt.objDefinitionSize * 4) - 23;
-        templateRequest.writeUInt16LE(magicFormula, 4);
-
-        // Message Router to Embed in UCMM
-        const MR = CIP.MessageRouter.build(READ_TEMPLATE, identityPath, templateRequest);
-
-        this.write_cip(MR);
-
         const readTemplateErr = new Error("TIMEOUT occurred while reading Template.");
+        let data;
+        while (stillReading === true) {
+            // Build the request per 1756-PM020 p. 51f
+            templateRequest.writeUInt32LE(memberOffset, 0);
+            if (memberOffset === 0) {
+                templateRequest.writeUInt16LE(magicFormula, 4);
+            }
+            else {
+                templateRequest.writeUInt16LE(remainingBytes, 4);
+            }
 
-        // Wait for Response
-        const data = await promiseTimeout(
-            new Promise((resolve, reject) => {
-                this.on("Read Template", (err, data) => {
-                    if (err) // check what kind of error we got
-                    {
-                        if (err.generalStatusCode == 6) // that's fine! We just need to read more.
+
+            // Message Router to Embed in UCMM
+            MR = CIP.MessageRouter.build(READ_TEMPLATE, identityPath, templateRequest);
+
+            this.write_cip(MR);
+
+            // Wait for Response
+            data = await promiseTimeout(
+                new Promise((resolve, reject) => {
+                    this.on("Read Template", (err, data) => {
+                        if (err) // check what kind of error we got
                         {
-                            console.log("Need more requests");
+                            if (err.generalStatusCode == 6) // that's fine! We just need to read more.
+                            {
+                                //reject(err);
+                                console.log("Need more requests");
+                                resolve(data);
+                                stillReading = true;
+                            } else if (err.generalStatusCode === 0xFF) {
+                                console.log("General Error: Access beyond end of the object.");
+                                reject(err);
+                                stillReading = false;
+                            }
+                            else {
+                                reject(err);
+                                stillReading = false;
+                            }
                         }
                         else {
-                            reject(err);
+                            resolve(data);
+                            stillReading = false;
                         }
-                    }
-                    else {
-                        resolve(data);
-                    }
-                });
-            }),
-            10000,
-            readTemplateErr
-        );
+                    });
+                }),
+                10000,
+                readTemplateErr
+            );
 
-        this.removeAllListeners("Read Template");
+            this.removeAllListeners("Read Template");
+            memberOffset = data.length;
+            remainingBytes = magicFormula - memberOffset;
+            if (fullData === undefined) {
+                fullData = data;
+            } else {
+                fullData = Buffer.concat([fullData, data]);
+            }
+        }
 
-        var parser = new SymbolParser();
-        var templateObj = parser.parseTemplate(templateAtt, data);
+        const templateObj = parser.parseTemplate(templateAtt, fullData);
         let structure;
         for (const members of templateObj.memberList) {
             var symbolObj = parser.parseSymbolType(members.type);
@@ -1034,9 +1061,6 @@ class Controller extends ENIP {
                 var struct3 = data.readUInt32LE(ptr);
                 ptr += 4;
                 tagNameAscii = tagNameBytes.toString();
-                if (tagNameAscii.indexOf("rtINTArrOne") > -1) {
-                    console.log('letssee');
-                }
                 if (tagNameAscii.indexOf("Program:") > -1) {
                     programList.push(tagNameAscii); // Program-Scope
                 } else if (tagNameAscii.indexOf("Routine:mymain") > -1) {
@@ -1046,35 +1070,38 @@ class Controller extends ENIP {
                     let symbolObj = parser.parseSymbolType(symbolType);
                     let templateObject = null; // If we have only a templateObject, we use that. If we have both, prefer asciiType
                     if (isUserTag(tagNameAscii)) {
-                        // if (asciiType === null) {
-                        //     if (symbolObj.systemBit === "user" && symbolObj.structureBit === "structure") { // We cannot parse System-Templates yet
-                        //         templateObject = await this._readTemplate(symbolObj.symbolType);
-                        //         console.log("Read Template");
-                        //     }
-                        //     if (symbolObj.arrayBit !== "0") {
-                        //         /* eslint-disable indent */
-                        //         switch (symbolObj.arrayBit) {
-                        //             case "1":
-                        //                 asciiType = `${ (typeof templateObject === "object" && templateObject !== null) ? templateObject.templateName : getTypeCodeString(symbolType & 0xFF) }[${struct1}]`;
-                        //                 break;
-                        //             case "2":
-                        //                 asciiType = `${ (typeof templateObject === "object" && templateObject !== null) ? templateObject.templateName : getTypeCodeString(symbolType & 0xFF) }[${struct1},${struct2}]`;
-                        //                 break;
-                        //             case "3":
-                        //                 asciiType = `${ (typeof templateObject === "object" && templateObject !== null) ? templateObject.templateName : getTypeCodeString(symbolType & 0xFF) }[${struct1},${struct2},${struct3}]`;
-                        //                 break;
-                        //             default:
-                        //                 asciiType = "ERRType in Array";
-                        //                 break;
-                        //         }
-                        //     }
-                        // }
+                        if(tagNameAscii === 'rtUDT2')
+                        {
+                            console.log();
+                        }
+                        if (asciiType === null) {
+                            if (symbolObj.systemBit === "user" && symbolObj.structureBit === "structure") { // We cannot parse System-Templates yet
+                                templateObject = await this._readTemplate(symbolObj.symbolType);
+                                console.log("Read Template");
+                            }
+                            if (symbolObj.arrayBit !== "0") {
+                                /* eslint-disable indent */
+                                switch (symbolObj.arrayBit) {
+                                    case "1":
+                                        asciiType = `${(typeof templateObject === "object" && templateObject !== null) ? templateObject.templateName : getTypeCodeString(symbolType & 0xFF)}[${struct1}]`;
+                                        break;
+                                    case "2":
+                                        asciiType = `${(typeof templateObject === "object" && templateObject !== null) ? templateObject.templateName : getTypeCodeString(symbolType & 0xFF)}[${struct1},${struct2}]`;
+                                        break;
+                                    case "3":
+                                        asciiType = `${(typeof templateObject === "object" && templateObject !== null) ? templateObject.templateName : getTypeCodeString(symbolType & 0xFF)}[${struct1},${struct2},${struct3}]`;
+                                        break;
+                                    default:
+                                        asciiType = "ERRType in Array";
+                                        break;
+                                }
+                            }
+                        }
                         if (asciiType !== null && !(tagNameAscii.indexOf("ZZZZZZZZZ") >= 0)) {
                             tagList.push({ tagName: tagNameAscii, symbolType: asciiType || templateObject });
                         }
                     }
                     tagListFull.push({ tagName: tagNameAscii, symbolType: asciiType || templateObject });
-                    //tagList.push(tagNameAscii);
                 }
 
             }

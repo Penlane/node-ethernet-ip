@@ -60,11 +60,17 @@ class SymbolParser {
                     cutString: data.toString("ascii", 0, idx),
                     restBuf: data.slice(idx + 1, data.length),
                 };
+            } else {
+                if (idx === data.length) {
+                    console.log("Need to retrieve more");
+                }
             }
         }
     }
 
     parseTemplate(templateAtt, templateData) {
+
+        // Slice the buffer from memberCount * 8 Bytes (to get to the first name)
         // 8 in following calc (1756-PM202 pg. 55f):
         // 2 Bytes info
         // 2 Bytes type
@@ -76,6 +82,7 @@ class SymbolParser {
             templateName: parsedName.cutString.split(";")[0], // We got the first bit till zero, now split at the char ';'
             memberList: [],
         };
+
         for (let i = 0; i < templateAtt.memberCount; i++) {
             let memberObj = {};
             memberObj.info = templateData.readUInt16LE(i * 8);
@@ -83,7 +90,7 @@ class SymbolParser {
             memberObj.offset = templateData.readUInt32LE((i * 8) + 4);
             parsedName = this._parseTemplateTillZero(parsedName.restBuf);
             if (parsedName === undefined) {
-                console.log();
+                console.log("Error when parsing template response in symbolparser");
             }
             memberObj.asciiName = parsedName.cutString;
             templateObj.memberList.push(memberObj);
