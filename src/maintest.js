@@ -24,11 +24,38 @@ PLC.addTemplate({
     }
 });
 
+PLC.addTemplate({
+    name: "simpleUDT",
+    definition: {
+        simpleINT: Types.INT,
+        simpleSTRING: "STRING"
+    },
+});
+
+PLC.addTemplate({
+    name: "ASCIISTRING82",
+    definition: {
+        LEN: Types.DINT,
+        DATA: { type: Types.SINT, length: 82 },
+    },
+});
+
+PLC.addTemplate({
+    name: "COUNTER",
+    definition: {
+        CU: Types.BOOL,
+        PRE: Types.DINT,
+        CTL: { type: Types.BOOL, length: 3 }
+    },
+});
+
 const writeTag = new Tag("wtSTRING", "WriteTestProg", "STRING");
-const arrTag = new Tag("myIntARRAY", "MainProgram", { type: Types.INT, length: 3 } );
+const arrTag = new Tag("myIntARRAY", "MainProgram", { type: Types.INT, length: 3 });
 const udtTag = new Tag("rtUDT", "ReadTestProg", "testUDT"); // Program Scope Tag in PLC Program "prog"
 const connTag = new Tag("myInt", "MainProgram", Types.INT);
-
+const simpleTag = new Tag("testTagSimpleUDT", "MainProgram", "simpleUDT");
+const asciiStr = new Tag("myStr", "MainProgram", "ASCIISTRING82");
+const countTest = new Tag("customCount", "MainProgram", "COUNTER");
 // PLC.connect("192.168.1.11", 0).then(async () => {
 
 //     /* Write String Test */
@@ -68,11 +95,54 @@ const connTag = new Tag("myInt", "MainProgram", Types.INT);
 //     });
 // });
 
-PLC.connect("192.168.1.11",0).then(async () => {
+PLC.connect("192.168.1.11", 0).then(async () => {
     // const arrTag = new Tag("rtINTArrThree", "ReadTestProg", Types.DINT);
     // await PLC.readTag(arrTag);
     // console.log(arrTag.value);
-    await PLC.readTagList();
+    await PLC.readTag(asciiStr);
+    console.log(asciiStr.value);
+    await PLC.readTag(countTest);
+    console.log(countTest.value);
+    var { tagList: tagList, templateList: udtList } = await PLC.readTagList();
+    const dataTypeLookUp  = EthernetIP.CIP.DataTypes.Types;
+    const isValidType = EthernetIP.CIP.DataTypes.isValidTypeCode;
+    const getType = EthernetIP.CIP.DataTypes.getTypeCodeString;
+    dataTypeLookUp.STRING = "STRING"; // Override String datatype, since it is very wrong...
+    for (const templates of udtList) {
+        let templateObj = {
+            name: templates.templateName,
+            definition: {},
+        };
+        for (const members of templates.memberList) {
+            if (members.info > 0 && members.type !== "BOOL") {
+                templateObj.definition[members.asciiName] = { type: dataTypeLookUp[members.type], length: members.info };
+            } else {
+                templateObj.definition[members.asciiName] = dataTypeLookUp[members.type];
+            }
+        }
+        dataTypeLookUp[templates.templateName] = templates.templateName;
+        PLC.addTemplate(templateObj);
+    }
+    const udtGroup = new TagGroup();
+    for(const tags of tagList["Program:ReadTestProg"]) {
+        if (isValidType(dataTypeLookUp[tags.symbolType])) {
+            udtGroup.add(new Tag(tags.tagName, "ReadTestProg", dataTypeLookUp[tags.symbolType]));
+        } else {
+            udtGroup.add(new Tag(tags.tagName, "ReadTestProg", tags.symbolType));
+        }
+
+    }
+
+    const custStrTag = new Tag("custStrTest", "MainProgram", "mystrrrr");
+    const custUDT = new Tag("testTagSimpleUDT", "MainProgram", "simpleUDT");
+    // udtGroup.add(custStrTag);
+    // udtGroup.add(custUDT);
+    await PLC.readTagGroup(udtGroup);
+    udtGroup.forEach(tag => {
+        console.log(`Read Tag with Name: ${tag.name}`);
+        console.log(tag.value);
+    });
+    console.log(tagList);
     //await PLC.disconnect();
 });
 

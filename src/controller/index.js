@@ -830,24 +830,30 @@ class Controller extends ENIP {
             } else {
                 structure = getTypeCodeString(symbolObj.symbolType);
                 if (symbolObj.arrayBit !== "0") {
+                    // Following lines don't matter for UDTs! We have the Array-structure in the .info property
                     /* eslint-disable indent */
-                    switch (symbolObj.arrayBit) {
-                        case "1":
-                            members.type = `${getTypeCodeString(symbolObj.symbolType & 0xFF)}[${members.info}]`;
-                            break;
-                        case "2":
-                            throw new Error("Only single dimension Arrays allowed in UDTs");
-                        case "3":
-                            throw new Error("Only single dimension Arrays allowed in UDTs");
-                        default:
-                            members.type = `${getTypeCodeString(symbolObj.symbolType & 0xFF)}[${members.info}]`;
-                            break;
-                    }
+                    // switch (symbolObj.arrayBit) {
+                    //     case "1":
+                    //         members.type = `${getTypeCodeString(symbolObj.symbolType & 0xFF)}[${members.info}]`;
+                    //         break;
+                    //     case "2":
+                    //         throw new Error("Only single dimension Arrays allowed in UDTs");
+                    //     case "3":
+                    //         throw new Error("Only single dimension Arrays allowed in UDTs");
+                    //     default:
+                    //         members.type = `${getTypeCodeString(symbolObj.symbolType & 0xFF)}[${members.info}]`;
+                    //         break;
+                    // }
+                    members.type = getTypeCodeString(symbolObj.symbolType & 0xFF);
                 } else {
                     if (getTypeCodeString(symbolObj.symbolType & 0xFF) !== null) {
                         members.type = getTypeCodeString(symbolObj.symbolType & 0xFF);
                     }
                 }
+            }
+            if (members.type === "BIT_STRING") {
+                members.type = "BOOL";
+                members.info = members.info * 32;
             }
         }
         return templateObj;
@@ -1066,14 +1072,13 @@ class Controller extends ENIP {
                 } else if (tagNameAscii.indexOf("Routine:mymain") > -1) {
                     console.log("Found a routine");
                 } else {
+                    if(tagNameAscii.indexOf("myContBool") >= 0){
+                        console.log();
+                    }
                     let asciiType = getTypeCodeString(symbolType);
                     let symbolObj = parser.parseSymbolType(symbolType);
                     let templateObject = null; // If we have only a templateObject, we use that. If we have both, prefer asciiType
                     if (isUserTag(tagNameAscii)) {
-                        if(tagNameAscii === 'rtUDT2')
-                        {
-                            console.log();
-                        }
                         if (asciiType === null) {
                             if (symbolObj.systemBit === "user" && symbolObj.structureBit === "structure") { // We cannot parse System-Templates yet
                                 templateObject = await this._readTemplate(symbolObj.symbolType);
@@ -1097,8 +1102,19 @@ class Controller extends ENIP {
                                 }
                             }
                         }
-                        if (asciiType !== null && !(tagNameAscii.indexOf("ZZZZZZZZZ") >= 0)) {
-                            tagList.push({ tagName: tagNameAscii, symbolType: asciiType || templateObject });
+                        if (asciiType !== null && !(tagNameAscii.indexOf("ZZZZZZZZZ") >= 0) || templateObject !== null) {
+                            // FIXME: Rework this section to remove all the nested conditionals. The logic is ok.
+                            if (asciiType !== null) {
+                                if (asciiType.indexOf("BIT_STRING") >= 0) {
+                                    asciiType = `BOOL[${struct1*32}]`;
+                                }
+                                if (!(asciiType.indexOf("[") >= 0)) {
+                                    tagList.push({ tagName: tagNameAscii, symbolType: asciiType || templateObject });
+                                }
+                            } else {
+                                tagList.push({ tagName: tagNameAscii, symbolType: asciiType || templateObject });
+                            }
+
                         }
                     }
                     tagListFull.push({ tagName: tagNameAscii, symbolType: asciiType || templateObject });
@@ -1129,8 +1145,13 @@ class Controller extends ENIP {
             retObj = await this._readTagList(programs);
             retList[programs] = retObj.tagObjList;
         }
-        console.log(retList);
-        return { retList };
+        //console.log(retList);
+        const symP = new SymbolParser();
+        const tempList = symP.filterTemplates(retList);
+        const sortTempList = symP.sortNestedTemplates(tempList);
+        const templateList = sortTempList;
+        const tagList = symP.adjustTagListFormat(retList);
+        return { tagList, templateList };
     }
 
     /**

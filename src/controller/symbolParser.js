@@ -69,7 +69,6 @@ class SymbolParser {
     }
 
     parseTemplate(templateAtt, templateData) {
-
         // Slice the buffer from memberCount * 8 Bytes (to get to the first name)
         // 8 in following calc (1756-PM202 pg. 55f):
         // 2 Bytes info
@@ -93,7 +92,9 @@ class SymbolParser {
                 console.log("Error when parsing template response in symbolparser");
             }
             memberObj.asciiName = parsedName.cutString;
-            templateObj.memberList.push(memberObj);
+            if (!(memberObj.asciiName.indexOf("ZZZZZZZZZ") >= 0)) { // Filter hidden SINTS for BOOLs
+                templateObj.memberList.push(memberObj);
+            }
         }
         return templateObj;
     }
@@ -110,6 +111,141 @@ class SymbolParser {
         } else {
             return true; // User-Scope
         }
+    }
+    /**
+     * Takes a symbolType Object from the retrieved TagList and
+     * converts it to a standardized Template Object, then pushes that Object to a list.
+     * This function is used internally to split the Templates from the TagList and
+     * fill a list with these Templates. Caution: Recursion.
+     * @param {Object} templateObj - An object containing Template-Information in SymbolType format
+     * @param {Array} tempList - [out]: A list that is passed / returned to contain the Template Objects
+     * @memberof SymbolParser 
+     */
+    _formatAndPushTemplate(templateObj, tempList) {
+        const newTempObj = {
+            templateName: templateObj.templateName,
+            memberList: [],
+        };
+        try {
+            for (const members of templateObj.memberList) {
+                if (typeof members.type === "object" && members.type !== null) {
+                    const newTempMemObj = JSON.parse(JSON.stringify(members));
+                    if (members.type.templateName === "ASCIISTRING82") {
+                        newTempMemObj.type = "STRING";
+                    } else {
+                        newTempMemObj.type = members.type.templateName;
+                    }
+                    newTempObj.memberList.push(newTempMemObj);
+                    this._formatAndPushTemplate(members.type, tempList);
+                } else {
+                    newTempObj.memberList.push(members);
+                }
+            }
+        } catch(e) {
+            console.log(e);
+        }
+        if (!(tempList.some(templateObj => templateObj.templateName === newTempObj.templateName))) {
+            tempList.push(newTempObj);
+        }
+    }
+
+    /**
+     * Filters the Templates from the tagList and puts them in a list
+     * @param {Object} tagList - The taglist as delivered by the Controller
+     * @returns {Array} An array containing only Templates in standardized format
+     */
+    filterTemplates(tagList) {
+        const templateList = [];
+        Object.keys(tagList).forEach((progs) => {
+            for (const tags of tagList[progs]) {
+                if (typeof tags.symbolType === "object" && tags.symbolType !== null) {
+                    this._formatAndPushTemplate(tags.symbolType, templateList);
+                }
+            }
+        });
+        return templateList;
+    }
+
+    /**
+     * Sorts a list of UDTs by retrieving their Nest-Level and sorting accordingly.
+     * @param {Array} udtSList - A list of unsorted UDT-Templates in standardized format
+     */
+    sortNestedTemplates(udtSList) {
+        const udtList = JSON.parse(JSON.stringify(udtSList));
+        const templateNameList = [];
+        const nestedUDTs = {};
+        for (const templates of udtList) {
+            templateNameList.push(templates.templateName);
+        }
+        for (const templates of udtList) {
+            nestedUDTs[templates.templateName] = [];
+            for (const members of templates.memberList) {
+                if (templateNameList.includes(members.type)) {
+                    nestedUDTs[templates.templateName].push([members.asciiName, members.type]);
+                    console.log(`Found a nest in ${templates.templateName} with member: ${members.asciiName} and type: ${members.type}`);
+                }
+            }
+        }
+        Object.keys(nestedUDTs).forEach((udt) => {
+            const nestLvl = this._determineUdtNestLevel(nestedUDTs, udt);
+            console.log(`NestLevel ${nestLvl} for UDT ${udt} (higher is 'worse')`);
+            nestedUDTs[udt].nestLevel = nestLvl;
+        });
+        for (const templates of udtList) {
+            templates.nestLevel = nestedUDTs[templates.templateName].nestLevel;
+        }
+        return udtList.sort(this._compareNestLevels);
+    }
+
+    /**
+     * Determines the Nest-Level of a UDT by starting with a level of 0
+     * and recursing further into the structure until no more nests are found.
+     * @param {Array} nestList 
+     * @param {Object} udt 
+     * @param {Number} nestLevel 
+     */
+    _determineUdtNestLevel(nestList, udt, nestLevel = 0) {
+        if (nestList[udt].length === 0) {
+            return nestLevel;
+        } else {
+            const nLvl = nestLevel + 1;
+            for (const nests of nestList[udt]) {
+                return this._determineUdtNestLevel(nestList, nests[1], nLvl);
+            }
+        }
+        return "err";
+    }
+    
+    /**
+     * Comparison function used in sorting the UDTs by nest-level. 
+     * @param {Object} udtA 
+     * @param {Object} udtB 
+     * @returns {boolean} truthy, if the nestLevel of A>B, falsy, otherwise
+     */
+    _compareNestLevels(udtA, udtB) {
+        return udtA.nestLevel - udtB.nestLevel;
+    }
+
+
+    /**
+     * In order to fit with the defined TagList-Format, the information about templates does not longer need
+     * to be part of the TagList. Thus, we reduce the symbolType Objects of UDTs to their templateName.
+     * @param {Object} tagList 
+     * @returns {Object} The tagList templateNames as UDT-symbolTypes instead of whole objects
+     */
+    adjustTagListFormat(tagList) {
+        const newList = {};
+        Object.keys(tagList).forEach((prog) => {
+            newList[prog] = [];
+            for (const tags of tagList[prog]) {
+                if (typeof tags.symbolType === "object" && tags.symbolType !== null) {
+                    newList[prog].push({ tagName: tags.tagName, symbolType: tags.symbolType.templateName });
+                } else {
+                    newList[prog].push(tags);
+                }
+            }
+        });
+        return newList;
     }
 }
 
