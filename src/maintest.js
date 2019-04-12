@@ -108,6 +108,18 @@ PLC.connect("192.168.1.11", 0).then(async () => {
     const isValidType = EthernetIP.CIP.DataTypes.isValidTypeCode;
     const getType = EthernetIP.CIP.DataTypes.getTypeCodeString;
     dataTypeLookUp.STRING = "STRING"; // Override String datatype, since it is very wrong...
+    const timerTEMP = {
+        name: "TIMER",
+        definition: {
+            CTL: Types.BOOL,
+            PRE: Types.DINT,
+            ACC: Types.DINT,
+            EN: { type: Types.BOOL, length: 7 },
+            TT: { type: Types.BOOL, length: 6 },
+            D: { type: Types.BOOL, length: 5 },
+        },
+    };
+    PLC.addTemplate(timerTEMP);
     for (const templates of udtList) {
         let templateObj = {
             name: templates.templateName,
@@ -130,13 +142,15 @@ PLC.connect("192.168.1.11", 0).then(async () => {
         } else {
             udtGroup.add(new Tag(tags.tagName, "ReadTestProg", tags.symbolType));
         }
-
     }
-
+    
+    const cusTIMERTag = new Tag("myContTimer", null, "TIMER");
     const custStrTag = new Tag("custStrTest", "MainProgram", "mystrrrr");
     const custUDT = new Tag("testTagSimpleUDT", "MainProgram", "simpleUDT");
     // udtGroup.add(custStrTag);
     // udtGroup.add(custUDT);
+    await PLC.readTag(cusTIMERTag);
+    console.log(cusTIMERTag.value());
     await PLC.readTagGroup(udtGroup);
     udtGroup.forEach(tag => {
         console.log(`Read Tag with Name: ${tag.name}`);
