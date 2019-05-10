@@ -2,7 +2,7 @@ const { EventEmitter } = require("events");
 const crypto = require("crypto");
 const { CIP } = require("../enip");
 const { MessageRouter } = CIP;
-const { READ_TAG, WRITE_TAG, READ_MODIFY_WRITE_TAG } = MessageRouter.services;
+const { READ_TAG, WRITE_TAG, READ_MODIFY_WRITE_TAG, READ_TAG_FRAGMENTED } = MessageRouter.services;
 const { Types, getTypeCodeString, isValidTypeCode } = require("../enip/cip/data-types");
 const dateFormat = require("dateformat");
 
@@ -359,17 +359,24 @@ class Tag extends EventEmitter {
      * @returns {buffer} - Read Tag Message Service
      * @memberof Tag
      */
-    generateReadMessageRequest(size = null) {
+    generateReadMessageRequest(size = null, offset = null) {
         if (size) this.state.read_size = size;
 
         const { tag } = this.state;
 
         // Build Message Router to Embed in UCMM
+        let service = READ_TAG;
         let buf = Buffer.alloc(2);
         buf.writeUInt16LE(this.state.read_size, 0);
+        if (offset !== null) {
+            let offBuf = Buffer.alloc(4);
+            offBuf.writeUInt32LE(offset, 0);
+            buf = Buffer.concat([buf, offBuf]);
+            service = READ_TAG_FRAGMENTED;
+        }
 
         // Build Current Message
-        return MessageRouter.build(READ_TAG, tag.path, buf);
+        return MessageRouter.build(service, tag.path, buf);
     }
 
     /**
@@ -385,7 +392,7 @@ class Tag extends EventEmitter {
         const type = data.readUInt16LE(0);
         if (!tag.type) tag.type = type;
         else {
-            if (tag.type !== type && ( typeof tag.type !== "string" || type !== Types.STRUCT)) 
+            if (tag.type !== type && (typeof tag.type !== "string" || type !== Types.STRUCT))
                 throw new Error(`Type Read Mismatch - tag: ${tag.type} vs read: ${type}`);
         }
 
@@ -411,9 +418,9 @@ class Tag extends EventEmitter {
                         "Data Type other than SINT, INT, DINT, or BIT_STRING returned when a Bit Index was requested"
                     );
             }
-            /* eslint-enable indent */
+        /* eslint-enable indent */
         // not a bit index - template deserialization
-        else{
+        else {
             const template = this._getTemplate();
             if (type === STRUCT) {
                 template.structure_handle = data.readUInt16LE(2);

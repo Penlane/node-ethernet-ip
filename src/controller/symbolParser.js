@@ -182,13 +182,13 @@ class SymbolParser {
             for (const members of templates.memberList) {
                 if (templateNameList.includes(members.type)) {
                     nestedUDTs[templates.templateName].push([members.asciiName, members.type]);
-                    console.log(`Found a nest in ${templates.templateName} with member: ${members.asciiName} and type: ${members.type}`);
+                    // console.log(`Found a nest in ${templates.templateName} with member: ${members.asciiName} and type: ${members.type}`);
                 }
             }
         }
         Object.keys(nestedUDTs).forEach((udt) => {
             const nestLvl = this._determineUdtNestLevel(nestedUDTs, udt);
-            console.log(`NestLevel ${nestLvl} for UDT ${udt} (higher is 'worse')`);
+            // console.log(`NestLevel ${nestLvl} for UDT ${udt} (higher is 'worse')`);
             nestedUDTs[udt].nestLevel = nestLvl;
         });
         for (const templates of udtList) {

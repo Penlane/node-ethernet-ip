@@ -2,7 +2,7 @@ const { Controller, Tag, CIP, TagGroup, EthernetIP, util } = require("./index");
 const { Types } = CIP.DataTypes;
 
 
-const PLC = new Controller(false);
+const PLC = new Controller(true);
 
 PLC.addTemplate({
     name: "myUDT",
@@ -56,6 +56,7 @@ const connTag = new Tag("myInt", "MainProgram", Types.INT);
 const simpleTag = new Tag("testTagSimpleUDT", "MainProgram", "simpleUDT");
 const asciiStr = new Tag("myStr", "MainProgram", "ASCIISTRING82");
 const countTest = new Tag("customCount", "MainProgram", "COUNTER");
+const largeTag = new Tag("largeTag", "MainProgram", Types.SINT);
 // PLC.connect("192.168.1.11", 0).then(async () => {
 
 //     /* Write String Test */
@@ -99,10 +100,13 @@ PLC.connect("192.168.1.11", 0).then(async () => {
     // const arrTag = new Tag("rtINTArrThree", "ReadTestProg", Types.DINT);
     // await PLC.readTag(arrTag);
     // console.log(arrTag.value);
-    await PLC.readTag(asciiStr);
-    console.log(asciiStr.value);
-    await PLC.readTag(countTest);
-    console.log(countTest.value);
+    // await PLC.readTag(largeTag,510);
+    // console.log(largeTag.value);
+    // await PLC.readTag(asciiStr);
+    // console.log(asciiStr.value);
+    // await PLC.readTag(countTest);
+    // console.log(countTest.value);
+    var time = await PLC.readWallClock();
     var { tagList: tagList, templateList: udtList } = await PLC.readTagList();
     const dataTypeLookUp  = EthernetIP.CIP.DataTypes.Types;
     const isValidType = EthernetIP.CIP.DataTypes.isValidTypeCode;
@@ -126,15 +130,34 @@ PLC.connect("192.168.1.11", 0).then(async () => {
             definition: {},
         };
         for (const members of templates.memberList) {
-            if (members.info > 0 && members.type !== "BOOL") {
-                templateObj.definition[members.asciiName] = { type: dataTypeLookUp[members.type], length: members.info };
+            if (members.info > 0) {
+                if (members.type === "BOOL") {
+                    if (members.info >= 32) {
+                        templateObj.definition[members.asciiName] = { type: dataTypeLookUp[members.type], length: members.info };
+                    } else {
+                        templateObj.definition[members.asciiName] = dataTypeLookUp[members.type];
+                    }
+                } else {
+                    templateObj.definition[members.asciiName] = { type: dataTypeLookUp[members.type], length: members.info };
+                }
             } else {
                 templateObj.definition[members.asciiName] = dataTypeLookUp[members.type];
             }
         }
         dataTypeLookUp[templates.templateName] = templates.templateName;
+        if(templateObj.name.indexOf("big") >= 0) {
+            console.log();
+        }
         PLC.addTemplate(templateObj);
     }
+    const huuugeUDT = new Tag("testTheBig", "MainProgram", "bigTestUDT");
+    const smallUDT = new Tag("testTagSimpleUDT", "MainProgram", "simpleUDT");
+    const padUDT = new Tag("padUDT", "MainProgram", "jhensonUDT");
+    await PLC.readTag(smallUDT);
+    await PLC.readTag(huuugeUDT);
+    await PLC.readTag(padUDT);
+    //console.log(huuugeUDT.value.udString);
+    //console.log(smallUDT);
     const udtGroup = new TagGroup();
     for(const tags of tagList["Program:ReadTestProg"]) {
         if (isValidType(dataTypeLookUp[tags.symbolType])) {
@@ -143,14 +166,14 @@ PLC.connect("192.168.1.11", 0).then(async () => {
             udtGroup.add(new Tag(tags.tagName, "ReadTestProg", tags.symbolType));
         }
     }
-    
+
     const cusTIMERTag = new Tag("myContTimer", null, "TIMER");
     const custStrTag = new Tag("custStrTest", "MainProgram", "mystrrrr");
     const custUDT = new Tag("testTagSimpleUDT", "MainProgram", "simpleUDT");
     // udtGroup.add(custStrTag);
     // udtGroup.add(custUDT);
-    await PLC.readTag(cusTIMERTag);
-    console.log(cusTIMERTag.value());
+    //await PLC.readTag(cusTIMERTag);
+    //console.log(cusTIMERTag.value());
     await PLC.readTagGroup(udtGroup);
     udtGroup.forEach(tag => {
         console.log(`Read Tag with Name: ${tag.name}`);

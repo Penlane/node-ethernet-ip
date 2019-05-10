@@ -6,6 +6,7 @@ const TemplateMap = require("../template/atomics");
 const { delay, promiseTimeout } = require("../utilities");
 const Queue = require("task-easy");
 const SymbolParser = require("./symbolParser");
+const eventDebug = require("event-debug");
 
 const compare = (obj1, obj2) => {
     if (obj1.priority > obj2.priority) return true;
@@ -633,21 +634,49 @@ class Controller extends ENIP {
      * @returns {Promise}
      */
     async readWallClock() {
-        if (this.state.controller.name.search("L8") === -1)
+        let service;
+        let serviceStr;
+        let tempName;
+        const { GET_ATTRIBUTE_LIST, GET_ATTRIBUTE_SINGLE } = CIP.MessageRouter.services;
+        if (this.state.controller.name.search("L8") !== -1) {
+            service = GET_ATTRIBUTE_SINGLE;
+            serviceStr = "Get Attribute Single";
+            tempName = "L8";
+        }
+        else if (this.state.controller.name.search("L32") !== -1) {
+            service = GET_ATTRIBUTE_LIST;
+            serviceStr = "Get Attribute List";
+            tempName = "L32";
+        }
+        else {
             throw new Error("WallClock Utilities are not supported by this controller type");
-
-        const { GET_ATTRIBUTE_SINGLE } = CIP.MessageRouter.services;
+        }
         const { LOGICAL } = CIP.EPATH.segments;
 
         // Build Identity Object Logical Path Buffer
-        const identityPath = Buffer.concat([
+        let identityPath = Buffer.concat([
             LOGICAL.build(LOGICAL.types.ClassID, 0x8b), // WallClock Object (0x8B)
             LOGICAL.build(LOGICAL.types.InstanceID, 0x01), // Instance ID (0x01)
-            LOGICAL.build(LOGICAL.types.AttributeID, 0x05) // Local Time Attribute ID
         ]);
 
-        // Message Router to Embed in UCMM
-        const MR = CIP.MessageRouter.build(GET_ATTRIBUTE_SINGLE, identityPath, []);
+        let MR; // Container for the Embedded Packet
+
+        // If we are either Micro800 or L8 CPU, we can access this via Attribute
+        if (tempName === "L8") {
+            let identityPath = Buffer.concat([
+                identityPath,
+                LOGICAL.build(LOGICAL.types.Attribute, 0x05),
+            ]);
+            // Message Router to Embed in UCMM
+            MR = CIP.MessageRouter.build(service, identityPath);
+        } else if (tempName === "L32") {
+            const timeRequest = Buffer.concat([
+                Buffer([0x01, 0x00]), //Attribute Count
+                Buffer([0x0b, 0x00]), //Local Time
+            ]);
+            // Message Router to Embed in UCMM
+            MR = CIP.MessageRouter.build(service, identityPath, timeRequest);
+        }
 
         this.write_cip(MR);
 
@@ -656,7 +685,7 @@ class Controller extends ENIP {
         // Wait for Response
         const data = await promiseTimeout(
             new Promise((resolve, reject) => {
-                this.on("Get Attribute Single", (err, data) => {
+                this.on(serviceStr, (err, data) => {
                     if (err) reject(err);
                     resolve(data);
                 });
@@ -665,19 +694,28 @@ class Controller extends ENIP {
             readPropsErr
         );
 
-        this.removeAllListeners("Get Attribute Single");
+        this.removeAllListeners(serviceStr);
+        
+        let date;
+        if (tempName === "L8") {
+            // Parse Returned Buffer
+            let wallClockArray = [];
+            for (let i = 0; i < 7; i++) {
+                wallClockArray.push(data.readUInt32LE(i * 4));
+            }
 
-        // Parse Returned Buffer
-        let wallClockArray = [];
-        for (let i = 0; i < 7; i++) {
-            wallClockArray.push(data.readUInt32LE(i * 4));
+            // Massage Data to JS Date Friendly Format
+            wallClockArray[6] = Math.trunc(wallClockArray[6] / 1000); // convert to ms from us
+            wallClockArray[1] -= 1; // month is 0-based
+
+            date = new Date(...wallClockArray);
+        } else if (tempName === "L32") {
+            // We receive 8 Bytes of microsecond data...
+            var ref = require("ref");
+            const micros = (ref.readUInt64LE(data, 0));
+            date = new Date(micros/1000);
         }
 
-        // Massage Data to JS Date Friendly Format
-        wallClockArray[6] = Math.trunc(wallClockArray[6] / 1000); // convert to ms from us
-        wallClockArray[1] -= 1; // month is 0-based
-
-        const date = new Date(...wallClockArray);
         this.state.controller.time = date;
     }
 
@@ -782,10 +820,8 @@ class Controller extends ENIP {
             data = await promiseTimeout(
                 new Promise((resolve, reject) => {
                     this.on("Read Template", (err, data) => {
-                        if (err) // check what kind of error we got
-                        {
-                            if (err.generalStatusCode == 6) // that's fine! We just need to read more.
-                            {
+                        if (err) { // check what kind of error we got
+                            if (err.generalStatusCode === 6) { // that's fine! We just need to read more.
                                 //reject(err);
                                 console.log("Need more requests");
                                 resolve(data);
@@ -794,13 +830,11 @@ class Controller extends ENIP {
                                 console.log("General Error: Access beyond end of the object.");
                                 reject(err);
                                 stillReading = false;
-                            }
-                            else {
+                            } else {
                                 reject(err);
                                 stillReading = false;
                             }
-                        }
-                        else {
+                        } else {
                             resolve(data);
                             stillReading = false;
                         }
@@ -900,17 +934,13 @@ class Controller extends ENIP {
         const data = await promiseTimeout(
             new Promise((resolve, reject) => {
                 this.on("Get Attribute List", (err, data) => {
-                    if (err) // check what kind of error we got
-                    {
-                        if (err.generalStatusCode == 6) // that's fine! We just need to read more.
-                        {
+                    if (err) { // check what kind of error we got
+                        if (err.generalStatusCode === 6) { // that's fine! We just need to read more.
                             console.log("Need more requests");
-                        }
-                        else {
+                        } else {
                             reject(err);
                         }
-                    }
-                    else {
+                    } else {
                         resolve(data);
                     }
                 });
@@ -1007,18 +1037,14 @@ class Controller extends ENIP {
             const data = await promiseTimeout(
                 new Promise((resolve, reject) => {
                     this.on("Get Instance Attribute List", (err, data) => {
-                        if (err) // check what kind of error we got
-                        {
-                            if (err.generalStatusCode == 6) // that's fine! We just need to read more.
-                            {
+                        if (err) { // check what kind of error we got
+                            if (err.generalStatusCode === 6) { // that's fine! We just need to read more.
                                 stillReading = true;
-                            }
-                            else {
+                            } else {
                                 stillReading = false;
                                 reject(err);
                             }
-                        }
-                        else {
+                        } else {
                             stillReading = false;
                         }
                         resolve(data);
@@ -1070,9 +1096,9 @@ class Controller extends ENIP {
                 if (tagNameAscii.indexOf("Program:") > -1) {
                     programList.push(tagNameAscii); // Program-Scope
                 } else if (tagNameAscii.indexOf("Routine:mymain") > -1) {
-                    console.log("Found a routine");
+                    // console.log("Found a routine");
                 } else {
-                    if(tagNameAscii.indexOf("myContBool") >= 0){
+                    if (tagNameAscii.indexOf("myContBool") >= 0) {
                         console.log();
                     }
                     let asciiType = getTypeCodeString(symbolType);
@@ -1082,7 +1108,7 @@ class Controller extends ENIP {
                         if (asciiType === null) {
                             if (symbolObj.systemBit === "user" && symbolObj.structureBit === "structure") { // We cannot parse System-Templates yet
                                 templateObject = await this._readTemplate(symbolObj.symbolType);
-                                console.log("Read Template");
+                                // console.log("Read Template");
                             }
                             if (symbolObj.arrayBit !== "0") {
                                 /* eslint-disable indent */
@@ -1106,7 +1132,7 @@ class Controller extends ENIP {
                             // FIXME: Rework this section to remove all the nested conditionals. The logic is ok.
                             if (asciiType !== null) {
                                 if (asciiType.indexOf("BIT_STRING") >= 0) {
-                                    asciiType = `BOOL[${struct1*32}]`;
+                                    asciiType = `BOOL[${struct1 * 32}]`;
                                 }
                                 if (!(asciiType.indexOf("[") >= 0)) {
                                     tagList.push({ tagName: tagNameAscii, symbolType: asciiType || templateObject });
@@ -1312,30 +1338,62 @@ class Controller extends ENIP {
      * @returns {Promise}
      * @memberof Controller
      */
-    async _readTag(tag, size = null) {
+    async _readTag(tag, size = null, offset = null) {
         tag.controller = this;
-
-        const MR = tag.generateReadMessageRequest(size);
+        let service;
+        let data;
+        let appendumData;
+        if (offset !== null) {
+            service = "Read Tag Fragmented";
+        } else {
+            service = "Read Tag";
+        }
+        const MR = tag.generateReadMessageRequest(size, offset);
 
         this.write_cip(MR);
 
         const readTagErr = new Error(`TIMEOUT occurred while reading Tag: ${tag.name}.`);
 
         // Wait for Response
-        const data = await promiseTimeout(
-            new Promise((resolve, reject) => {
-                this.on("Read Tag", (err, data) => {
-                    if (err) reject(err);
-                    resolve(data);
-                });
-            }),
-            10000,
-            readTagErr
-        );
-
-        this.removeAllListeners("Read Tag");
-
-        tag.parseReadMessageResponse(data);
+        try {
+            data = await promiseTimeout(
+                new Promise((resolve, reject) => {
+                    async function serviceHandler(err, data) {
+                        if (err) {
+                            if (err.generalStatusCode === 6) {
+                                console.log(`Packet size too large, we received ${data.length} bytes of data`);
+                                if (offset === null) {
+                                    appendumData = await this._readTag(tag, size, data.length - 4);
+                                    //appendumData = Buffer.concat([Buffer.from([0x14, 0x00, 0x00, 0x00]), await this._readTag(tag, size, data.length-4)]);
+                                } else {
+                                    appendumData = await this._readTag(tag, size, data.length);
+                                }
+                                console.log(`Received Appendum Data with Length ${appendumData.length}`);
+                                data = Buffer.concat([data, appendumData.slice(4)]); // When recombining the buffer, make sure to cut off the dataType part
+                                console.log(`Concatenated Length therefore ${data.length}`);
+                                resolve(data);
+                            } else {
+                                reject(err);
+                            }
+                        } else {
+                            console.log(`Packet without Error, received ${data.length} bytes of data`);
+                            resolve(data);
+                        }
+                    }
+                    this.once(service, serviceHandler);
+                }),
+                10000,
+                readTagErr
+            );
+        } catch (e) {
+            console.log(e);
+        }
+        if (offset === null) {
+            this.removeAllListeners(service);
+            tag.parseReadMessageResponse(data);
+        } else {
+            return data;
+        }
     }
 
     /**
