@@ -668,6 +668,7 @@ class Controller extends ENIP {
             ]);
             // Message Router to Embed in UCMM
             MR = CIP.MessageRouter.build(service, identityPath, []);
+            this.write_cip_generic(MR);
         } else if (tempName === "L32") {
             const timeRequest = Buffer.concat([
                 Buffer([0x01, 0x00]), //Attribute Count
@@ -675,9 +676,9 @@ class Controller extends ENIP {
             ]);
             // Message Router to Embed in UCMM
             MR = CIP.MessageRouter.build(service, identityPath, timeRequest);
-        }
+            this.write_cip(MR);
 
-        this.write_cip_generic(MR);
+        }
 
         const readPropsErr = new Error("TIMEOUT occurred while reading Controller Clock.");
 
@@ -709,15 +710,9 @@ class Controller extends ENIP {
 
             date = new Date(...wallClockArray);
         } else if (tempName === "L32") {
-            let wallClockArray = [];
-            for (let i = 0; i < 7; i++) {
-                wallClockArray.push(data.readUInt32LE(i * 4));
-            }
-
-            // Massage Data to JS Date Friendly Format
-            wallClockArray[6] = Math.trunc(wallClockArray[6] / 1000); // convert to ms from us
-            wallClockArray[1] -= 1; // month is 0-based
-            date = new Date(...wallClockArray);
+            const offset = 6; // this is where the 64-bit time actually starts
+            const utcMicros = data.readInt32LE(offset) + 0x100000000 * data.readUInt32LE(offset + 4);
+            date = new Date(utcMicros/1000);
         }
 
         this.state.controller.time = date;
