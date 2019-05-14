@@ -1,6 +1,6 @@
 {
     "name": "ethernet-ip",
-    "version": "1.2.4",
+    "version": "2.0.1-patch",
     "description": "A simple node interface for Ethernet/IP.",
     "main": "./src/index.js",
     "scripts": {
@@ -36,6 +36,7 @@
         "coveralls": "^3.0.2",
         "eslint": "^4.19.1",
         "eslint-plugin-jest": "^21.22.0",
+        "event-debug": "^2.1.0",
         "jest": "^23.6.0"
     },
     "author": "Canaan Seaton",
