@@ -660,15 +660,14 @@ class Controller extends ENIP {
         ]);
 
         let MR; // Container for the Embedded Packet
-
         // If we are either Micro800 or L8 CPU, we can access this via Attribute
         if (tempName === "L8") {
-            let identityPath = Buffer.concat([
+            identityPath = Buffer.concat([
                 identityPath,
-                LOGICAL.build(LOGICAL.types.Attribute, 0x05),
+                LOGICAL.build(LOGICAL.types.AttributeID, 0x0b),
             ]);
             // Message Router to Embed in UCMM
-            MR = CIP.MessageRouter.build(service, identityPath);
+            MR = CIP.MessageRouter.build(service, identityPath, []);
         } else if (tempName === "L32") {
             const timeRequest = Buffer.concat([
                 Buffer([0x01, 0x00]), //Attribute Count
@@ -678,7 +677,7 @@ class Controller extends ENIP {
             MR = CIP.MessageRouter.build(service, identityPath, timeRequest);
         }
 
-        this.write_cip(MR);
+        this.write_cip_generic(MR);
 
         const readPropsErr = new Error("TIMEOUT occurred while reading Controller Clock.");
 
@@ -710,10 +709,15 @@ class Controller extends ENIP {
 
             date = new Date(...wallClockArray);
         } else if (tempName === "L32") {
-            // We receive 8 Bytes of microsecond data...
-            var ref = require("ref");
-            const micros = (ref.readUInt64LE(data, 0));
-            date = new Date(micros/1000);
+            let wallClockArray = [];
+            for (let i = 0; i < 7; i++) {
+                wallClockArray.push(data.readUInt32LE(i * 4));
+            }
+
+            // Massage Data to JS Date Friendly Format
+            wallClockArray[6] = Math.trunc(wallClockArray[6] / 1000); // convert to ms from us
+            wallClockArray[1] -= 1; // month is 0-based
+            date = new Date(...wallClockArray);
         }
 
         this.state.controller.time = date;
