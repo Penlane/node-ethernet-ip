@@ -449,7 +449,7 @@ class Controller extends ENIP {
             ]);
             // Message Router to Embed in UCMM
             MR = CIP.MessageRouter.build(service, identityPath, []);
-            this.write_cip_generic(MR);
+            this.write_cip(MR);
         } else if (plcName === "L32") { // If we are a CompactLogix CPU, we can access via AttributeList
             const timeRequest = Buffer.concat([
                 Buffer([0x01, 0x00]), //Attribute Count
