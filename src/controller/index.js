@@ -92,7 +92,7 @@ class Controller extends ENIP {
      */
     set connectedMessaging(conn) {
         if (typeof conn !== "boolean") throw new Error("connectedMessaging must be of type <boolean>");
-        this.state.connectedMessaging= conn;
+        this.state.connectedMessaging = conn;
     }
 
     /**
@@ -138,12 +138,12 @@ class Controller extends ENIP {
 
         const sessid = await super.connect(IP_ADDR);
         if (!sessid) throw new Error("Failed to Register Session with Controller");
-        
+
         this._initializeControllerEventHandlers(); // Connect sendRRData Event
 
         if (this.state.connectedMessaging === true) {
             const connid = await this.forwardOpen();
-            if(!connid) throw new Error("Failed to Establish Forward Open Connection with Controller");
+            if (!connid) throw new Error("Failed to Establish Forward Open Connection with Controller");
         }
 
         // Fetch Controller Properties and Wall Clock
@@ -161,7 +161,7 @@ class Controller extends ENIP {
     async disconnect() {
         if (super.established_conn === true) {
             const closeid = await this.forwardClose();
-            if(!closeid) throw new Error("Failed to End Connected EIP Session with Forward Close Request");
+            if (!closeid) throw new Error("Failed to End Connected EIP Session with Forward Close Request");
         }
 
         super.destroy();
@@ -179,7 +179,7 @@ class Controller extends ENIP {
     async forwardOpen() {
         const { FORWARD_OPEN } = CIP.MessageRouter.services;
         const { LOGICAL } = CIP.EPATH.segments;
-        const { owner, connectionType, fixedVar, priority} = CIP.ConnectionManager;
+        const { owner, connectionType, fixedVar, priority } = CIP.ConnectionManager;
 
         // Build Connection Manager Object Logical Path Buffer
         const cmPath = Buffer.concat([
@@ -191,9 +191,9 @@ class Controller extends ENIP {
         const MR = CIP.MessageRouter.build(FORWARD_OPEN, cmPath, []);
 
         // Create connection parameters
-        const params = CIP.ConnectionManager.build_connectionParameters(owner["Exclusive"], connectionType["PointToPoint"],priority["Low"],fixedVar["Variable"],500);
+        const params = CIP.ConnectionManager.build_connectionParameters(owner["Exclusive"], connectionType["PointToPoint"], priority["Low"], fixedVar["Variable"], 500);
 
-        const forwardOpenData = CIP.ConnectionManager.build_forwardOpen(10000,params);
+        const forwardOpenData = CIP.ConnectionManager.build_forwardOpen(10000, params);
 
         // Build MR Path in order to send the message to the CPU
         const mrPath = Buffer.concat([
@@ -209,7 +209,7 @@ class Controller extends ENIP {
 
         // This is the Connection Path data unit (Vol.1 Table 3-5.21)
         const connectionPath = Buffer.concat([
-            Buffer.from([Math.ceil(portPath.length/2)]), //Path size in WORDS
+            Buffer.from([Math.ceil(portPath.length / 2)]), //Path size in WORDS
             portPath
         ]);
 
@@ -239,7 +239,7 @@ class Controller extends ENIP {
         );
 
         this.removeAllListeners("Forward Open");
-        
+
         const OTconnID = data.readUInt32LE(0); // first 4 Bytes are O->T connection ID 
         super.id_conn = OTconnID;
         super.established_conn = true;
@@ -280,7 +280,7 @@ class Controller extends ENIP {
 
         // This is the Connection Path data unit (Vol.1 Table 3-5.21)
         const connectionPath = Buffer.concat([
-            Buffer.from([Math.ceil(portPath.length/2)]), //Path size in WORDS
+            Buffer.from([Math.ceil(portPath.length / 2)]), //Path size in WORDS
             Buffer.from([0x00]), // Padding
             portPath
         ]);
@@ -309,7 +309,7 @@ class Controller extends ENIP {
         );
 
         this.removeAllListeners("Forward Close");
-        
+
         const OTconnID = data.readUInt32LE(0); // first 4 Bytes are O->T connection ID 
         super.id_conn = OTconnID;
         super.established_conn = false;
@@ -415,30 +415,58 @@ class Controller extends ENIP {
      * @returns {Promise}
      */
     async readWallClock() {
-        if (this.state.controller.name.search("L8") === -1)
+        let service;
+        let serviceStr;
+        let plcName;
+        const { GET_ATTRIBUTE_LIST, GET_ATTRIBUTE_SINGLE } = CIP.MessageRouter.services;
+        if (this.state.controller.name.search("L8") !== -1) {
+            service = GET_ATTRIBUTE_SINGLE;
+            serviceStr = "Get Attribute Single";
+            plcName = "L8";
+        }
+        else if (this.state.controller.name.search("L32") !== -1) {
+            service = GET_ATTRIBUTE_LIST;
+            serviceStr = "Get Attribute List";
+            plcName = "L32";
+        }
+        else {
             throw new Error("WallClock Utilities are not supported by this controller type");
-
-        const { GET_ATTRIBUTE_SINGLE } = CIP.MessageRouter.services;
+        }
         const { LOGICAL } = CIP.EPATH.segments;
 
         // Build Identity Object Logical Path Buffer
-        const identityPath = Buffer.concat([
+        let identityPath = Buffer.concat([
             LOGICAL.build(LOGICAL.types.ClassID, 0x8b), // WallClock Object (0x8B)
             LOGICAL.build(LOGICAL.types.InstanceID, 0x01), // Instance ID (0x01)
-            LOGICAL.build(LOGICAL.types.AttributeID, 0x05) // Local Time Attribute ID
         ]);
 
-        // Message Router to Embed in UCMM
-        const MR = CIP.MessageRouter.build(GET_ATTRIBUTE_SINGLE, identityPath, []);
+        let MR; // Container for the Embedded Packet
+        // If we are either Micro800 or L8 CPU, we can access this via Attribute
+        if (plcName === "L8") {
+            identityPath = Buffer.concat([
+                identityPath,
+                LOGICAL.build(LOGICAL.types.AttributeID, 0x0b),
+            ]);
+            // Message Router to Embed in UCMM
+            MR = CIP.MessageRouter.build(service, identityPath, []);
+            this.write_cip_generic(MR);
+        } else if (plcName === "L32") { // If we are a CompactLogix CPU, we can access via AttributeList
+            const timeRequest = Buffer.concat([
+                Buffer([0x01, 0x00]), //Attribute Count
+                Buffer([0x0b, 0x00]), //Local Time
+            ]);
+            // Message Router to Embed in UCMM
+            MR = CIP.MessageRouter.build(service, identityPath, timeRequest);
+            this.write_cip(MR);
 
-        this.write_cip(MR);
+        }
 
         const readPropsErr = new Error("TIMEOUT occurred while reading Controller Clock.");
 
         // Wait for Response
         const data = await promiseTimeout(
             new Promise((resolve, reject) => {
-                this.on("Get Attribute Single", (err, data) => {
+                this.on(serviceStr, (err, data) => {
                     if (err) reject(err);
                     resolve(data);
                 });
@@ -447,19 +475,27 @@ class Controller extends ENIP {
             readPropsErr
         );
 
-        this.removeAllListeners("Get Attribute Single");
+        this.removeAllListeners(serviceStr);
 
-        // Parse Returned Buffer
-        let wallClockArray = [];
-        for (let i = 0; i < 7; i++) {
-            wallClockArray.push(data.readUInt32LE(i * 4));
+        let date;
+        if (plcName === "L8") {
+            // Parse Returned Buffer
+            let wallClockArray = [];
+            for (let i = 0; i < 7; i++) {
+                wallClockArray.push(data.readUInt32LE(i * 4));
+            }
+
+            // Massage Data to JS Date Friendly Format
+            wallClockArray[6] = Math.trunc(wallClockArray[6] / 1000); // convert to ms from us
+            wallClockArray[1] -= 1; // month is 0-based
+
+            date = new Date(...wallClockArray);
+        } else if (plcName === "L32") {
+            const offset = 6; // this is where the 64-bit time actually starts
+            const utcMicros = data.readInt32LE(offset) + 0x100000000 * data.readUInt32LE(offset + 4);
+            date = new Date(utcMicros / 1000);
         }
 
-        // Massage Data to JS Date Friendly Format
-        wallClockArray[6] = Math.trunc(wallClockArray[6] / 1000); // convert to ms from us
-        wallClockArray[1] -= 1; // month is 0-based
-
-        const date = new Date(...wallClockArray);
         this.state.controller.time = date;
     }
 
@@ -904,7 +940,7 @@ class Controller extends ENIP {
                 break;
             case WRITE_TAG_FRAGMENTED:
                 this.emit("Write Tag Fragmented", error, data);
-                break;            
+                break;
             case READ_MODIFY_WRITE_TAG:
                 this.emit("Read Modify Write Tag", error, data);
                 this.emit("Forward Close", error, data);
@@ -1030,7 +1066,7 @@ class Controller extends ENIP {
                 break;
             case WRITE_TAG_FRAGMENTED:
                 this.emit("Write Tag Fragmented", error, data);
-                break;            
+                break;
             case READ_MODIFY_WRITE_TAG:
                 this.emit("Read Modify Write Tag", error, data);
                 this.emit("Forward Close", error, data);
@@ -1096,7 +1132,7 @@ class Controller extends ENIP {
                 this.emit("Unknown Reply", { generalStatusCode: 0x99, extendedStatus: [] }, data);
                 break;
         }
-        /* eslint-enable indent */        
+        /* eslint-enable indent */
     }
 
     // _handleSessionRegistrationFailed(error) {
