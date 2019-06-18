@@ -381,6 +381,10 @@ class Controller extends ENIP {
                         priority: 1,
                         timestamp: new Date()
                     });
+            case "readStatus":
+                return this.workers.generic.schedule(this.readControllerProps.bind(this), []);
+            default:
+                throw new Error("Provide a valid Service");
         }
     }
 
