@@ -44,7 +44,8 @@ class Controller extends ENIP {
         this.workers = {
             read: new Queue(compare),
             write: new Queue(compare),
-            group: new Queue(compare)
+            group: new Queue(compare),
+            generic: new Queue(compare),
         };
     }
 
@@ -349,6 +350,40 @@ class Controller extends ENIP {
         return OTconnID;
     }
 
+    executeGenericCIP(genCipParams, genCipService) {
+        if (typeof genCipParams === "undefined" || typeof genCipParams !== "object") throw new Error("Provide the params in form of an Object");
+        /* eslint-disable indent*/
+        switch (genCipService) {
+            case "readGenericSingle":
+                return this.workers.generic.schedule(this._readGenericSingle.bind(this), [genCipParams.classID, genCipParams.instanceID, genCipParams.attributeID], {
+                    priority: 1,
+                    timestamp: new Date()
+                });
+            case "readGenericAll":
+                return this.workers.generic.schedule(this._readGenericAll.bind(this), [genCipParams.classID, genCipParams.instanceID], {
+                    priority: 1,
+                    timestamp: new Date()
+                });
+            case "writeGenericSingle":
+                return this.workers.generic.schedule(this._writeGenericSingle.bind(this), [
+                    genCipParams.classID,
+                    genCipParams.instanceID,
+                    genCipParams.attributeID,
+                    genCipParams.writeData], {
+                        priority: 1,
+                        timestamp: new Date()
+                    });
+            case "writeGenericAll":
+                return this.workers.generic.schedule(this._writeGenericSingle.bind(this), [
+                    genCipParams.classID,
+                    genCipParams.instanceID,
+                    genCipParams.writeData], {
+                        priority: 1,
+                        timestamp: new Date()
+                    });
+        }
+    }
+
     /**
      * Reads a all entities (class/instance/attribute) from a generic CIP object
      *
@@ -358,7 +393,7 @@ class Controller extends ENIP {
      * @memberof Controller
      * @returns {Promise}
      */
-    async readGenericAll(classID, instanceID, attributeID) {
+    async _readGenericAll(classID, instanceID, attributeID) {
         if (classID <= 0 || typeof classID !== "number") throw new Error("ClassID needs to be positive and a number");
         if (instanceID != undefined && (instanceID <= 0 || typeof instanceID !== "number")) throw new Error("InstanceID needs to be positive and a number");
         if (attributeID != undefined && (attributeID <= 0 || typeof instanceID !== "number")) throw new Error("AttributeID needs to be positive and a number");
@@ -404,7 +439,7 @@ class Controller extends ENIP {
      * @memberof Controller
      * @returns {Promise}
      */
-    async readGenericSingle(classID, instanceID, attributeID) {
+    async _readGenericSingle(classID, instanceID, attributeID) {
         if (classID <= 0 || typeof classID !== "number") throw new Error("ClassID needs to be positive and a number");
         if (instanceID != undefined && (instanceID <= 0 || typeof instanceID !== "number")) throw new Error("InstanceID needs to be positive and a number");
         if (attributeID != undefined && (attributeID <= 0 || typeof instanceID !== "number")) throw new Error("AttributeID needs to be positive and a number");
@@ -451,7 +486,7 @@ class Controller extends ENIP {
      * @memberof Controller
      * @returns {Promise}
      */
-    async writeGenericAll(classID, instanceID, writeData) {
+    async _writeGenericAll(classID, instanceID, writeData) {
         if (classID <= 0 || typeof classID !== "number") throw new Error("ClassID needs to be positive and a number");
         if (instanceID != undefined && (instanceID <= 0 || typeof instanceID !== "number")) throw new Error("InstanceID needs to be positive and a number");
         if (writeData == undefined || (!Buffer.isBuffer(writeData))) throw new Error("writeData Must be of Type Buffer");
@@ -497,7 +532,7 @@ class Controller extends ENIP {
      * @memberof Controller
      * @returns {Promise}
      */
-    async writeGenericSingle(classID, instanceID, attributeID, writeData) {
+    async _writeGenericSingle(classID, instanceID, attributeID, writeData) {
         if (classID <= 0 || typeof classID !== "number") throw new Error("ClassID needs to be positive and a number");
         if (instanceID != undefined && (instanceID <= 0 || typeof instanceID !== "number")) throw new Error("InstanceID needs to be positive and a number");
         if (attributeID != undefined && (attributeID <= 0 || typeof instanceID !== "number")) throw new Error("AttributeID needs to be positive and a number");
