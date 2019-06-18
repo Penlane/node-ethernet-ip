@@ -217,12 +217,6 @@ class Template {
                     return working_value;
                 }, []);
             } else {
-                if (member.indexOf("Bool") >= 0) {
-                    console.log();
-                }
-                if (members[member].offset === 0) {
-                    console.log();
-                }
                 // not array - deserialize template
                 value[member] = members[member].template.deserialize(data, offset + members[member].offset);
             }
@@ -265,25 +259,6 @@ class Template {
 
         // loop through definition keys
         for (let mem in definition) {
-            // set final member key as member or array of members
-            if (mem.indexOf("simpleINT") >= 0) {
-                console.log();
-            }
-            if (mem.indexOf("udBool") >= 0) {
-                console.log();
-            }
-            if (mem.indexOf("udString") >= 0) {
-                console.log();
-            }
-            if (mem.indexOf("udStringArr") >= 0) {
-                console.log();
-            }
-            if (mem.indexOf("udINT") >= 0) {
-                console.log();
-            }
-            if (mem.indexOf("udINTArr") >= 0) {
-                console.log();
-            }
             // get type as either an object key or value of member (i.e { member: { type: type }} or { member: type })
             let type = definition[mem].type || definition[mem];
 
@@ -299,6 +274,7 @@ class Template {
                 alignment = 32;
             offset = Math.ceil(offset / alignment) * alignment;
 
+            // set final member key as member or array of members
             if (length) {
                 members[mem] = [];
                 for (let index = 0; index < length; index++) {

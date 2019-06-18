@@ -141,7 +141,7 @@ class SymbolParser {
                     newTempObj.memberList.push(members);
                 }
             }
-        } catch(e) {
+        } catch (e) {
             console.log(e);
         }
         if (!(tempList.some(templateObj => templateObj.templateName === newTempObj.templateName))) {
@@ -215,7 +215,7 @@ class SymbolParser {
         }
         return "err";
     }
-    
+
     /**
      * Comparison function used in sorting the UDTs by nest-level. 
      * @param {Object} udtA 

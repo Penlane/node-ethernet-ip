@@ -17,7 +17,6 @@ module.exports = () => {
             deserialize(data=Buffer.alloc(1),offset=0){
                 const bit_offset = offset % 8;
                 const byte_offset = ( offset - bit_offset ) / 8;
-                const slicedBuf = data.slice(byte_offset, byte_offset+4);
                 return (data.readInt8(byte_offset) & (1 << bit_offset)) === 0 ? false : true;
             }
         }),

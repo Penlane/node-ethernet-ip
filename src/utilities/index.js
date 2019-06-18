@@ -34,80 +34,80 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
  * @returns {Promise}
  * @memberof Utilities
  */
-function _getENIPDevicesProm(ipInterface){
-    return new Promise((resolve,reject)=>{
+function _getENIPDevicesProm(ipInterface) {
+    return new Promise((resolve, reject) => {
         const ENIPList = new Array();
         let dsock = dgram.createSocket("udp4");
 
         let timeoutHandle = null;
-        dsock.bind(0,ipInterface["address"], () => {
+        dsock.bind(0, ipInterface["address"], () => {
             dsock.setBroadcast(true);
             const { listIdentity } = encapsulation;
-            
-            dsock.send(listIdentity(),44818,"255.255.255.255", (err) => {
-                if (err) throw new Error ("Error when sending via UDP: "+err);
+
+            dsock.send(listIdentity(), 44818, "255.255.255.255", (err) => {
+                if (err) throw new Error("Error when sending via UDP: " + err);
             });
 
             // Resolve after 100 milliseconds
-            timeoutHandle = setTimeout(()=>{
+            timeoutHandle = setTimeout(() => {
                 resolve(ENIPList);
-            },100);           
+            }, 100);
         });
 
-        dsock.on("error", function(err) {
+        dsock.on("error", function (err) {
             console.log("UDP Error caught: " + err.stack);
-            if(timeoutHandle !== null){
+            if (timeoutHandle !== null) {
                 clearTimeout(timeoutHandle);
             }
             reject(err);
         });
 
-        dsock.on("message", function(msg) {
-            if(msg.readUInt16LE(0) === 0x0063) { //Got em! Caught a listIdentity response.
+        dsock.on("message", function (msg) {
+            if (msg.readUInt16LE(0) === 0x0063) { //Got em! Caught a listIdentity response.
                 const plcProperties = {};
                 let ptr = 32; // Starting with Socket Address
                 plcProperties.socketAddress = {};
                 plcProperties.socketAddress.sin_family = msg.readUInt16BE(ptr);
-                ptr+=2;
+                ptr += 2;
                 plcProperties.socketAddress.sin_port = msg.readUInt16BE(ptr);
-                ptr+=2;
-                plcProperties.socketAddress.sin_addr = msg.readUInt8(ptr).toString()+
-                "."+msg.readUInt8(ptr+1).toString()+
-                "."+msg.readUInt8(ptr+2).toString()+
-                "."+msg.readUInt8(ptr+3).toString(); 
-                ptr+=4;
+                ptr += 2;
+                plcProperties.socketAddress.sin_addr = msg.readUInt8(ptr).toString() +
+                    "." + msg.readUInt8(ptr + 1).toString() +
+                    "." + msg.readUInt8(ptr + 2).toString() +
+                    "." + msg.readUInt8(ptr + 3).toString();
+                ptr += 4;
                 plcProperties.socketAddress.sin_zero = 0;
-                ptr+=8;
-        
+                ptr += 8;
+
                 // Now follows the asset data
                 plcProperties.vendorID = msg.readUInt16LE(ptr);
-                ptr+=2;
+                ptr += 2;
                 plcProperties.deviceType = msg.readUInt16LE(ptr);
-                ptr+=2;
+                ptr += 2;
                 plcProperties.productCode = msg.readUInt16LE(ptr);
-                ptr+=2;
+                ptr += 2;
                 plcProperties.majorRevision = msg.readUInt8(ptr);
-                ptr+=1;
+                ptr += 1;
                 plcProperties.minorRevision = msg.readUInt8(ptr);
-                ptr+=1;
+                ptr += 1;
                 plcProperties.status = msg.readUInt16LE(ptr);
-                ptr+=2;
+                ptr += 2;
                 plcProperties.serialNumber = msg.readUInt32LE(ptr);
-                ptr+=4;
+                ptr += 4;
                 plcProperties.productNameLength = msg.readUInt8(ptr);
-                ptr+=1;
-                plcProperties.productName = msg.toString("ascii",ptr,msg.length-1);
-                ptr+=plcProperties.productNameLength;
+                ptr += 1;
+                plcProperties.productName = msg.toString("ascii", ptr, msg.length - 1);
+                ptr += plcProperties.productNameLength;
                 plcProperties.state = msg.readUInt8(ptr);
 
                 ENIPList.push(plcProperties);
             }
         });
-        dsock.on("close", function() {
+        dsock.on("close", function () {
             //console.log("TMP: On close");
         });
 
-        dsock.on("listening", function() {
+        dsock.on("listening", function () {
             //console.log("TMP: On listening");
         });
     });
@@ -126,14 +126,14 @@ async function discover(IPv4Interface = null) {
     const IPv4List = new Array();
 
     /* No specified interface means we need to discover them on our own */
-    if(IPv4Interface === null) {
+    if (IPv4Interface === null) {
         const interfaceList = os.networkInterfaces();
         const iFaceListKeys = Object.keys(interfaceList);
         const iFaceListLen = iFaceListKeys.length;
         for (let i = 0; i < iFaceListLen; i += 1) {
             let interfaces = interfaceList[iFaceListKeys[i]];
             for (const addresses of interfaces) {
-                if(addresses["family"] === "IPv4") {
+                if (addresses["family"] === "IPv4") {
                     IPv4List.push(addresses);
                 }
             }
@@ -143,7 +143,7 @@ async function discover(IPv4Interface = null) {
     else {
         const IPv4RegEx = new RegExp("^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$");
         if (!IPv4RegEx.test(IPv4Interface)) throw new Error("Interface must match IPv4 format!");
-        IPv4List.push({address: IPv4Interface});    
+        IPv4List.push({ address: IPv4Interface });
     }
 
     /* For each interface, we send a broadcast with a listIdentity command */

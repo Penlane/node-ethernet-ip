@@ -6,7 +6,6 @@ const TemplateMap = require("../template/atomics");
 const { delay, promiseTimeout } = require("../utilities");
 const Queue = require("task-easy");
 const SymbolParser = require("./symbolParser");
-const eventDebug = require("event-debug");
 
 const compare = (obj1, obj2) => {
     if (obj1.priority > obj2.priority) return true;
@@ -695,7 +694,7 @@ class Controller extends ENIP {
         );
 
         this.removeAllListeners(serviceStr);
-        
+
         let date;
         if (tempName === "L8") {
             // Parse Returned Buffer
@@ -712,7 +711,7 @@ class Controller extends ENIP {
         } else if (tempName === "L32") {
             const offset = 6; // this is where the 64-bit time actually starts
             const utcMicros = data.readInt32LE(offset) + 0x100000000 * data.readUInt32LE(offset + 4);
-            date = new Date(utcMicros/1000);
+            date = new Date(utcMicros / 1000);
         }
 
         this.state.controller.time = date;
@@ -819,8 +818,10 @@ class Controller extends ENIP {
             data = await promiseTimeout(
                 new Promise((resolve, reject) => {
                     this.on("Read Template", (err, data) => {
-                        if (err) { // check what kind of error we got
-                            if (err.generalStatusCode === 6) { // that's fine! We just need to read more.
+                        if (err) // check what kind of error we got
+                        {
+                            if (err.generalStatusCode == 6) // that's fine! We just need to read more.
+                            {
                                 //reject(err);
                                 console.log("Need more requests");
                                 resolve(data);
@@ -829,11 +830,13 @@ class Controller extends ENIP {
                                 console.log("General Error: Access beyond end of the object.");
                                 reject(err);
                                 stillReading = false;
-                            } else {
+                            }
+                            else {
                                 reject(err);
                                 stillReading = false;
                             }
-                        } else {
+                        }
+                        else {
                             resolve(data);
                             stillReading = false;
                         }
@@ -933,13 +936,17 @@ class Controller extends ENIP {
         const data = await promiseTimeout(
             new Promise((resolve, reject) => {
                 this.on("Get Attribute List", (err, data) => {
-                    if (err) { // check what kind of error we got
-                        if (err.generalStatusCode === 6) { // that's fine! We just need to read more.
+                    if (err) // check what kind of error we got
+                    {
+                        if (err.generalStatusCode == 6) // that's fine! We just need to read more.
+                        {
                             console.log("Need more requests");
-                        } else {
+                        }
+                        else {
                             reject(err);
                         }
-                    } else {
+                    }
+                    else {
                         resolve(data);
                     }
                 });
@@ -1036,14 +1043,18 @@ class Controller extends ENIP {
             const data = await promiseTimeout(
                 new Promise((resolve, reject) => {
                     this.on("Get Instance Attribute List", (err, data) => {
-                        if (err) { // check what kind of error we got
-                            if (err.generalStatusCode === 6) { // that's fine! We just need to read more.
+                        if (err) // check what kind of error we got
+                        {
+                            if (err.generalStatusCode == 6) // that's fine! We just need to read more.
+                            {
                                 stillReading = true;
-                            } else {
+                            }
+                            else {
                                 stillReading = false;
                                 reject(err);
                             }
-                        } else {
+                        }
+                        else {
                             stillReading = false;
                         }
                         resolve(data);
@@ -1097,9 +1108,6 @@ class Controller extends ENIP {
                 } else if (tagNameAscii.indexOf("Routine:mymain") > -1) {
                     // console.log("Found a routine");
                 } else {
-                    if (tagNameAscii.indexOf("myContBool") >= 0) {
-                        console.log();
-                    }
                     let asciiType = getTypeCodeString(symbolType);
                     let symbolObj = parser.parseSymbolType(symbolType);
                     let templateObject = null; // If we have only a templateObject, we use that. If we have both, prefer asciiType
@@ -1337,62 +1345,30 @@ class Controller extends ENIP {
      * @returns {Promise}
      * @memberof Controller
      */
-    async _readTag(tag, size = null, offset = null) {
+    async _readTag(tag, size = null) {
         tag.controller = this;
-        let service;
-        let data;
-        let appendumData;
-        if (offset !== null) {
-            service = "Read Tag Fragmented";
-        } else {
-            service = "Read Tag";
-        }
-        const MR = tag.generateReadMessageRequest(size, offset);
+
+        const MR = tag.generateReadMessageRequest(size);
 
         this.write_cip(MR);
 
         const readTagErr = new Error(`TIMEOUT occurred while reading Tag: ${tag.name}.`);
 
         // Wait for Response
-        try {
-            data = await promiseTimeout(
-                new Promise((resolve, reject) => {
-                    async function serviceHandler(err, data) {
-                        if (err) {
-                            if (err.generalStatusCode === 6) {
-                                console.log(`Packet size too large, we received ${data.length} bytes of data`);
-                                if (offset === null) {
-                                    appendumData = await this._readTag(tag, size, data.length - 4);
-                                    //appendumData = Buffer.concat([Buffer.from([0x14, 0x00, 0x00, 0x00]), await this._readTag(tag, size, data.length-4)]);
-                                } else {
-                                    appendumData = await this._readTag(tag, size, data.length);
-                                }
-                                console.log(`Received Appendum Data with Length ${appendumData.length}`);
-                                data = Buffer.concat([data, appendumData.slice(4)]); // When recombining the buffer, make sure to cut off the dataType part
-                                console.log(`Concatenated Length therefore ${data.length}`);
-                                resolve(data);
-                            } else {
-                                reject(err);
-                            }
-                        } else {
-                            console.log(`Packet without Error, received ${data.length} bytes of data`);
-                            resolve(data);
-                        }
-                    }
-                    this.once(service, serviceHandler);
-                }),
-                10000,
-                readTagErr
-            );
-        } catch (e) {
-            console.log(e);
-        }
-        if (offset === null) {
-            this.removeAllListeners(service);
-            tag.parseReadMessageResponse(data);
-        } else {
-            return data;
-        }
+        const data = await promiseTimeout(
+            new Promise((resolve, reject) => {
+                this.on("Read Tag", (err, data) => {
+                    if (err) reject(err);
+                    resolve(data);
+                });
+            }),
+            10000,
+            readTagErr
+        );
+
+        this.removeAllListeners("Read Tag");
+
+        tag.parseReadMessageResponse(data);
     }
 
     /**
